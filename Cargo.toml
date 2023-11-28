@@ -8,6 +8,6 @@ edition = "2018"
 
 [dependencies]
 clap = "2.33.3"
-ggez = "0.5.1"
+ggez = "0.9.3"
 rand = "0.8.3"
 rayon = "1.5.0"

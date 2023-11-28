@@ -1,10 +1,8 @@
 mod cell;
 mod grid;
-mod types;
 
-use crate::grid::Grid;
-use crate::types::Point;
 use clap::{App, Arg};
+use grid::{Grid, Point};
 
 use ggez::event;
 use ggez::event::EventHandler;
@@ -13,7 +11,6 @@ use ggez::{Context, ContextBuilder, GameResult};
 use rand::Rng;
 
 const GRID: bool = false;
-//const CELL_SIZE: f32 = SCREEN_SIZE.0 / GRID_WIDTH as f32;
 
 #[allow(dead_code)]
 const BLINKER: [(usize, usize); 3] = [(4, 4), (4, 5), (4, 6)];
@@ -76,6 +73,7 @@ struct MainState {
     grid: Grid,
     config: Config,
 }
+
 impl MainState {
     pub fn new(_ctx: &mut Context, config: Config) -> Self {
         // Initialize the grid based on configuration
@@ -97,9 +95,9 @@ impl MainState {
             }
             _ => {
                 let mut rng = rand::thread_rng();
-                for i in 0..config.grid_width{
-                    for j in 0..config.grid_height{
-                        if rng.gen::<bool>(){
+                for i in 0..config.grid_width {
+                    for j in 0..config.grid_height {
+                        if rng.gen::<bool>() {
                             start_cells_coords.push((i, j).into());
                         }
                     }
@@ -108,30 +106,29 @@ impl MainState {
         }
         // Convert the starting states into a vector of points
         grid.set_state(&start_cells_coords);
-        MainState {
-            grid,
-            config,
-        }
+        MainState { grid, config }
     }
 }
 
 impl EventHandler for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
-        while ggez::timer::check_update_time(ctx, self.config.fps) {
+        while ctx.time.check_update_time(self.config.fps) {
             self.grid.update();
         }
         Ok(())
     }
+
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        graphics::clear(ctx, graphics::BLACK);
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::BLACK);
         // Mesh builder
         let mut builder = graphics::MeshBuilder::new();
         // Init, otherwise doesn't work for some reason
         builder.rectangle(
             graphics::DrawMode::fill(),
             graphics::Rect::new(0., 0., 0., 0.),
-            graphics::BLACK,
-        );
+            graphics::Color::BLACK,
+        )?;
+
         // Draw cells
         for (idx, cell) in self.grid.cells.iter().enumerate() {
             if cell.is_alive() {
@@ -146,7 +143,7 @@ impl EventHandler for MainState {
                         self.config.cell_size,
                     ),
                     color,
-                );
+                )?;
             }
         }
         // Draw grid
@@ -163,15 +160,15 @@ impl EventHandler for MainState {
                         self.config.cell_size,
                     ),
                     color,
-                );
+                )?;
             }
         }
-        let mesh = builder.build(ctx)?;
+        let mesh = builder.build();
+        let mesh = graphics::Mesh::from_data(ctx, mesh);
         // Draw
-        graphics::draw(ctx, &mesh, graphics::DrawParam::default())?;
+        canvas.draw(&mesh, graphics::DrawParam::default());
         // Present on screen
-        graphics::present(ctx)?;
-        Ok(())
+        canvas.finish(ctx)
     }
 }
 
@@ -235,10 +232,9 @@ fn main() -> GameResult {
     // Setup ggez stuff
     let cb = ContextBuilder::new("Game of life", "Zademn")
         .window_mode(ggez::conf::WindowMode::default().dimensions(screen_size.0, screen_size.1));
-    let (ctx, event_loop) = &mut cb.build()?; // `?` because the build function may fail
-    graphics::set_window_title(ctx, "Game of life");
+    let (mut ctx, event_loop) = cb.build()?;
+    ctx.gfx.set_window_title("Game of life");
     // Setup game state -> game loop
-    let mut state = MainState::new(ctx, config);
-    event::run(ctx, event_loop, &mut state)?;
-    Ok(())
+    let state = MainState::new(&mut ctx, config);
+    event::run(ctx, event_loop, state)
 }
