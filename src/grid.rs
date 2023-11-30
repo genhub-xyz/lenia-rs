@@ -45,23 +45,29 @@ impl Grid {
         let cell_pos = self.index_to_coords(cell_idx);
         // Check boundaries and add neighgours
         let mut num_neighbour_alive = 0;
-        for &x_off in [-1, 0, 1].iter() {
-            for &y_off in [-1, 0, 1].iter() {
+        for &x_off in [-1, 0, 1isize].iter() {
+            for &y_off in [-1, 0, 1isize].iter() {
                 if x_off == 0 && y_off == 0 {
                     continue;
                 }
 
                 let neighbour_coords = (cell_pos.x as isize + x_off, cell_pos.y as isize + y_off);
-                if neighbour_coords.0 < 0
-                    || neighbour_coords.0 > self.width as isize - 1
-                    || neighbour_coords.1 < 0
-                    || neighbour_coords.1 > self.height as isize - 1
-                {
+                let is_offscreen_left = neighbour_coords.0 < 0;
+                let is_offscreen_right = neighbour_coords.0 > (self.width - 1) as isize;
+                let is_offscreen_top = neighbour_coords.1 < 0;
+                let is_offsreen_bottom = neighbour_coords.1 > (self.height - 1) as isize;
+                let is_offscreen = is_offscreen_left
+                    || is_offscreen_right
+                    || is_offscreen_top
+                    || is_offsreen_bottom;
+
+                if is_offscreen {
                     continue;
                 }
+
                 let neighbour_pos = Point {
-                    x: neighbour_coords.0 as usize,
-                    y: neighbour_coords.1 as usize,
+                    x: neighbour_coords.0.unsigned_abs(),
+                    y: neighbour_coords.1.unsigned_abs(),
                 };
                 let idx = self.coords_to_index(neighbour_pos);
                 if self.cells[idx].is_alive() {
@@ -102,14 +108,14 @@ impl Grid {
 
     /// Converts a pair of cell coords to index in the cells vector
     pub fn coords_to_index(&self, pos: Point) -> usize {
-        pos.y * self.width + pos.x
+        pos.y * self.height + pos.x
     }
 
     /// Converts a index in the cells vecotr into pair of cell coords
     pub fn index_to_coords(&self, index: usize) -> Point {
         Point {
-            x: index % self.height,
-            y: index / self.width,
+            x: index % self.width,
+            y: index / self.height,
         }
     }
 }
