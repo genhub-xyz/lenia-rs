@@ -1,3 +1,4 @@
+use candle_core::DType;
 use candle_core::{Device, Tensor};
 use ggez::event;
 use ggez::event::EventHandler;
@@ -43,24 +44,35 @@ impl EventHandler for MainState {
             let res = image.conv2d(&kernel, 1, 1, 1, 1).unwrap();
 
             let res_flatten = res.flatten_to(3).unwrap().to_vec1::<f64>().unwrap();
-            self.cells = self
+            let cells_grown = self
                 .cells
                 .iter()
                 .zip(res_flatten)
-                .map(|(x, y)| {
-                    let is_alive = *x == 1.;
-                    let num_neighbour_alive = y;
+                .map(|(x, y)| x + f64::from(y == 3.) - f64::from((y < 2.) | (y > 3.)))
+                .collect();
 
-                    if is_alive && (num_neighbour_alive == 2. || num_neighbour_alive == 3.) {
-                        return 1.; // alive
-                    }
-                    if !is_alive && num_neighbour_alive == 3. {
-                        return 1.;
-                    }
+            let zeros = Tensor::zeros(
+                (self.config.grid_width, self.config.grid_height),
+                DType::F64,
+                &Device::Cpu,
+            )
+            .unwrap();
+            let one = Tensor::ones(
+                (self.config.grid_width, self.config.grid_height),
+                DType::F64,
+                &Device::Cpu,
+            )
+            .unwrap();
+            let grown_tensor = Tensor::from_vec(
+                cells_grown,
+                (self.config.grid_width, self.config.grid_height),
+                &Device::Cpu,
+            )
+            .unwrap();
 
-                    0.
-                })
-                .collect()
+            let res = grown_tensor.clamp(&zeros, &one).unwrap();
+            let res_flatten = res.flatten_all().unwrap().to_vec1().unwrap();
+            self.cells = res_flatten;
         }
         Ok(())
     }
