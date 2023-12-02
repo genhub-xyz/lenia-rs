@@ -1,11 +1,10 @@
-mod cell;
-mod grid;
+mod tensor;
 
+use candle_core::{Device, Tensor};
 use ggez::event;
 use ggez::event::EventHandler;
 use ggez::graphics;
 use ggez::{Context, ContextBuilder, GameResult};
-use grid::{Grid, Point};
 use rand::Rng;
 
 /// Config for the start of the game
@@ -16,28 +15,55 @@ pub struct Config {
     pub cell_size: f32,
     pub screen_size: (f32, f32),
     pub fps: u32,
-    pub initial_state: Vec<Point>,
 }
 
 struct MainState {
-    grid: Grid,
     config: Config,
+    cells: Vec<f64>,
 }
 
 impl MainState {
-    pub fn new(config: Config) -> Self {
-        // Initialize the grid based on configuration
-        let mut grid = Grid::new(config.grid_width, config.grid_height);
-        // Convert the starting states into a vector of points
-        grid.set_state(&config.initial_state);
-        MainState { grid, config }
+    pub fn new(config: Config, initial_state: Vec<f64>) -> Self {
+        MainState {
+            config,
+            cells: initial_state,
+        }
     }
 }
 
 impl EventHandler for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         while ctx.time.check_update_time(self.config.fps) {
-            self.grid.update();
+            let image = Tensor::from_vec(
+                self.cells.clone(),
+                (1, 1, self.config.grid_width, self.config.grid_height),
+                &Device::Cpu,
+            )
+            .unwrap();
+
+            let filter = [[1., 1., 1.], [1., 0., 1.], [1., 1., 1.]];
+            let kernel = Tensor::new(&[[filter]], &Device::Cpu).unwrap();
+            let res = image.conv2d(&kernel, 1, 1, 1, 1).unwrap();
+
+            let res_flatten = res.flatten_to(3).unwrap().to_vec1::<f64>().unwrap();
+            self.cells = self
+                .cells
+                .iter()
+                .zip(res_flatten)
+                .map(|(x, y)| {
+                    let is_alive = *x == 1.;
+                    let num_neighbour_alive = y;
+
+                    if is_alive && (num_neighbour_alive == 2. || num_neighbour_alive == 3.) {
+                        return 1.; // alive
+                    }
+                    if !is_alive && num_neighbour_alive == 3. {
+                        return 1.;
+                    }
+
+                    0.
+                })
+                .collect()
         }
         Ok(())
     }
@@ -47,22 +73,24 @@ impl EventHandler for MainState {
         let mut builder = graphics::MeshBuilder::new();
 
         // Draw cells
-        for (idx, cell) in self.grid.cells.iter().enumerate() {
-            if cell.is_alive() {
-                let pos = self.grid.index_to_coords(idx);
+        self.cells
+            .iter()
+            .filter(|x| **x > 0.)
+            .enumerate()
+            .for_each(|(i, _)| {
+                let pos_x = i % self.config.grid_width;
+                let pos_y = i / self.config.grid_height;
                 let color = graphics::Color::GREEN; // Green
-                builder.rectangle(
-                    graphics::DrawMode::fill(),
-                    graphics::Rect::new(
-                        pos.x as f32 * self.config.cell_size,
-                        pos.y as f32 * self.config.cell_size,
-                        self.config.cell_size,
-                        self.config.cell_size,
-                    ),
-                    color,
-                )?;
-            }
-        }
+                let draw_mode = graphics::DrawMode::fill();
+                let rect = graphics::Rect::new(
+                    pos_x as f32 * self.config.cell_size,
+                    pos_y as f32 * self.config.cell_size,
+                    self.config.cell_size,
+                    self.config.cell_size,
+                );
+                builder.rectangle(draw_mode, rect, color).unwrap();
+            });
+
         let mesh = builder.build();
         let mesh = graphics::Mesh::from_data(ctx, mesh);
         canvas.draw(&mesh, graphics::DrawParam::default());
@@ -76,15 +104,11 @@ fn main() -> GameResult {
     let cell_size = 10.;
     let fps = 20;
 
-    let mut start_cells_coords = Vec::new();
     let mut rng = rand::thread_rng();
-    for i in 0..grid_size.0 {
-        for j in 0..grid_size.1 {
-            if rng.gen::<bool>() {
-                start_cells_coords.push((i, j));
-            }
-        }
-    }
+    let initial_state = (0..grid_size.0 * grid_size.1)
+        .into_iter()
+        .map(|_| rng.gen::<bool>().into())
+        .collect::<Vec<f64>>();
 
     // Set configuration
     let config: Config = Config {
@@ -93,11 +117,8 @@ fn main() -> GameResult {
         cell_size,
         screen_size,
         fps,
-        initial_state: start_cells_coords
-            .iter()
-            .map(|&p| p.into())
-            .collect::<Vec<Point>>(),
     };
+    let state = MainState::new(config, initial_state);
 
     // Setup ggez stuff
     let cb = ContextBuilder::new("game_of_life", "Zoran")
@@ -105,6 +126,5 @@ fn main() -> GameResult {
     let (ctx, event_loop) = cb.build()?;
     ctx.gfx.set_window_title("Game of life");
     // Setup game state -> game loop
-    let state = MainState::new(config);
     event::run(ctx, event_loop, state)
 }
