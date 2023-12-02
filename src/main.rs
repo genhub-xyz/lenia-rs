@@ -1,5 +1,3 @@
-mod tensor;
-
 use candle_core::{Device, Tensor};
 use ggez::event;
 use ggez::event::EventHandler;
@@ -13,7 +11,6 @@ pub struct Config {
     pub grid_width: usize,
     pub grid_height: usize,
     pub cell_size: f32,
-    pub screen_size: (f32, f32),
     pub fps: u32,
 }
 
@@ -75,8 +72,8 @@ impl EventHandler for MainState {
         // Draw cells
         self.cells
             .iter()
-            .filter(|x| **x > 0.)
             .enumerate()
+            .filter(|(_, x)| **x > 0.)
             .for_each(|(i, _)| {
                 let pos_x = i % self.config.grid_width;
                 let pos_y = i / self.config.grid_height;
@@ -99,8 +96,8 @@ impl EventHandler for MainState {
 }
 
 fn main() -> GameResult {
-    let screen_size = (2000., 1500.);
-    let grid_size = (200, 150);
+    let screen_size = (1000., 1000.);
+    let grid_size = (100, 100);
     let cell_size = 10.;
     let fps = 20;
 
@@ -115,7 +112,6 @@ fn main() -> GameResult {
         grid_width: grid_size.0,
         grid_height: grid_size.1,
         cell_size,
-        screen_size,
         fps,
     };
     let state = MainState::new(config, initial_state);
