@@ -4,7 +4,11 @@ use ggez::event;
 use ggez::event::EventHandler;
 use ggez::graphics::{Canvas, Color, DrawMode, DrawParam, Mesh, MeshBuilder, Rect};
 use ggez::{Context, ContextBuilder, GameResult};
+use itertools::Itertools;
 use rand::Rng;
+use utils::ones;
+
+mod utils;
 
 /// Config for the start of the game
 #[derive(Debug, Clone)]
@@ -12,7 +16,8 @@ pub struct Config {
     pub grid_width: usize,
     pub grid_height: usize,
     pub cell_size: f32,
-    pub num_states: f32,
+    pub t: f32,
+    pub r: usize,
     pub fps: u32,
 }
 
@@ -29,12 +34,8 @@ impl MainState {
         }
     }
 
-    fn growth((x, y): (&f32, f32)) -> f32 {
-        x + f32::from((y >= 20.) & (y <= 24.)) - f32::from((y <= 18.) | (y > 32.))
-    }
-
-    fn map(x: f32, a: f32, b: f32, c: f32, d: f32) -> f32 {
-        (x - a) / (b - a) * (d - c) + c
+    fn growth((x, y): (&f32, f32), t: f32) -> f32 {
+        x + t * (f32::from((y >= 0.12) & (y <= 0.15)) - f32::from((y <= 0.12) | (y > 0.15)))
     }
 }
 
@@ -46,25 +47,29 @@ impl EventHandler for MainState {
             let image =
                 Tensor::from_vec(self.cells.clone(), conv_shape.clone(), &Device::Cpu).unwrap();
 
-            let filter = vec![1f32, 1., 1., 1., 0., 1., 1., 1., 1.];
-            let filter_shape = Shape::from((1, 1, 3, 3));
-            let kernel = Tensor::from_vec(filter, filter_shape, &Device::Cpu).unwrap();
-            let res = image.conv2d(&kernel, 1, 1, 1, 1).unwrap();
+            let mut filter = ones(self.config.r * 2 + 1, self.config.r * 2 + 1);
+            filter[self.config.r][self.config.r] = 0.;
+            let filter = filter.into_iter().flatten().collect_vec();
+            let sum = filter.iter().sum::<f32>();
+            let filter_norm = filter.iter().map(|x| x / sum).collect();
+
+            let filter_shape = Shape::from((1, 1, self.config.r * 2 + 1, self.config.r * 2 + 1));
+            let kernel = Tensor::from_vec(filter_norm, filter_shape, &Device::Cpu).unwrap();
+            let res = image.conv2d(&kernel, self.config.r, 1, 1, 1).unwrap();
 
             let res_flatten = res.flatten_to(3).unwrap().to_vec1::<f32>().unwrap();
             let cells_grown = self
                 .cells
                 .iter()
                 .zip(res_flatten)
-                .map(Self::growth)
+                .map(|(x, y)| Self::growth((x, y), 1. / self.config.t))
                 .collect();
 
             let zeros = Tensor::zeros(shape.clone(), DType::F32, &Device::Cpu).unwrap();
-            let max_state =
-                vec![self.config.num_states; self.config.grid_width * self.config.grid_height];
-            let max = Tensor::from_vec(max_state, shape.clone(), &Device::Cpu).unwrap();
+            let ones = Tensor::ones(shape.clone(), DType::F32, &Device::Cpu).unwrap();
+
             let grown_tensor = Tensor::from_vec(cells_grown, shape, &Device::Cpu).unwrap();
-            let res = grown_tensor.clamp(&zeros, &max).unwrap();
+            let res = grown_tensor.clamp(&zeros, &ones).unwrap();
             let res_flatten = res.flatten_all().unwrap().to_vec1().unwrap();
             self.cells = res_flatten;
         }
@@ -83,9 +88,7 @@ impl EventHandler for MainState {
             .for_each(|(i, x)| {
                 let pos_x = i % self.config.grid_width;
                 let pos_y = i / self.config.grid_height;
-                let max_value = self.config.num_states;
-                let alpha = Self::map(*x, 0., max_value, 0., 1.);
-                let color = Color::new(0., 1., 0., alpha); // Green
+                let color = Color::new(0., 1., 0., *x); // Green
                 let draw_mode = DrawMode::fill();
                 let rect = Rect::new(
                     pos_x as f32 * self.config.cell_size,
@@ -107,13 +110,14 @@ fn main() -> GameResult {
     let screen_size = (1000., 1000.);
     let grid_size = (100, 100);
     let cell_size = 10.;
-    let num_states = 12.;
+    let t = 10.;
+    let r = 10;
     let fps = 20;
 
     let mut rng = rand::thread_rng();
     let initial_state = (0..grid_size.0 * grid_size.1)
         .into_iter()
-        .map(|_| rng.gen_range(0..12u8).into())
+        .map(|_| rng.gen())
         .collect::<Vec<f32>>();
 
     // Set configuration
@@ -121,7 +125,8 @@ fn main() -> GameResult {
         grid_width: grid_size.0,
         grid_height: grid_size.1,
         cell_size,
-        num_states,
+        t,
+        r,
         fps,
     };
     let state = MainState::new(config, initial_state);
