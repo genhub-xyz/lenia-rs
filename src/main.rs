@@ -24,13 +24,37 @@ pub struct Config {
 struct MainState {
     config: Config,
     cells: Vec<f32>,
+    kernel: Tensor,
+    ones: Tensor,
+    zeros: Tensor,
+    shape: Shape,
+    conv_shape: Shape,
 }
 
 impl MainState {
     pub fn new(config: Config, initial_state: Vec<f32>) -> Self {
+        let shape = Shape::from((config.grid_width, config.grid_height));
+        let conv_shape = Shape::from((1, 1, config.grid_width, config.grid_height));
+
+        let mut filter = ones(config.r * 2 + 1, config.r * 2 + 1);
+        filter[config.r][config.r] = 0.;
+        let filter = filter.into_iter().flatten().collect_vec();
+        let sum = filter.iter().sum::<f32>();
+        let filter_norm = filter.iter().map(|x| x / sum).collect();
+        let filter_shape = Shape::from((1, 1, config.r * 2 + 1, config.r * 2 + 1));
+        let kernel = Tensor::from_vec(filter_norm, filter_shape, &Device::Cpu).unwrap();
+
+        let zeros = Tensor::zeros(shape.clone(), DType::F32, &Device::Cpu).unwrap();
+        let ones = Tensor::ones(shape.clone(), DType::F32, &Device::Cpu).unwrap();
+
         MainState {
             config,
             cells: initial_state,
+            kernel,
+            ones,
+            zeros,
+            shape,
+            conv_shape,
         }
     }
 
@@ -42,20 +66,9 @@ impl MainState {
 impl EventHandler for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         while ctx.time.check_update_time(self.config.fps) {
-            let shape = Shape::from((self.config.grid_width, self.config.grid_height));
-            let conv_shape = Shape::from((1, 1, self.config.grid_width, self.config.grid_height));
-            let image =
-                Tensor::from_vec(self.cells.clone(), conv_shape.clone(), &Device::Cpu).unwrap();
-
-            let mut filter = ones(self.config.r * 2 + 1, self.config.r * 2 + 1);
-            filter[self.config.r][self.config.r] = 0.;
-            let filter = filter.into_iter().flatten().collect_vec();
-            let sum = filter.iter().sum::<f32>();
-            let filter_norm = filter.iter().map(|x| x / sum).collect();
-
-            let filter_shape = Shape::from((1, 1, self.config.r * 2 + 1, self.config.r * 2 + 1));
-            let kernel = Tensor::from_vec(filter_norm, filter_shape, &Device::Cpu).unwrap();
-            let res = image.conv2d(&kernel, self.config.r, 1, 1, 1).unwrap();
+            let image = Tensor::from_vec(self.cells.clone(), self.conv_shape.clone(), &Device::Cpu)
+                .unwrap();
+            let res = image.conv2d(&self.kernel, self.config.r, 1, 1, 1).unwrap();
 
             let res_flatten = res.flatten_to(3).unwrap().to_vec1::<f32>().unwrap();
             let cells_grown = self
@@ -65,11 +78,9 @@ impl EventHandler for MainState {
                 .map(|(x, y)| Self::growth((x, y), 1. / self.config.t))
                 .collect();
 
-            let zeros = Tensor::zeros(shape.clone(), DType::F32, &Device::Cpu).unwrap();
-            let ones = Tensor::ones(shape.clone(), DType::F32, &Device::Cpu).unwrap();
-
-            let grown_tensor = Tensor::from_vec(cells_grown, shape, &Device::Cpu).unwrap();
-            let res = grown_tensor.clamp(&zeros, &ones).unwrap();
+            let grown_tensor =
+                Tensor::from_vec(cells_grown, self.shape.clone(), &Device::Cpu).unwrap();
+            let res = grown_tensor.clamp(&self.zeros, &self.ones).unwrap();
             let res_flatten = res.flatten_all().unwrap().to_vec1().unwrap();
             self.cells = res_flatten;
         }
