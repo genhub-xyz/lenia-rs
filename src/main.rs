@@ -6,7 +6,6 @@ use ggez::graphics::{Canvas, Color, DrawMode, DrawParam, Mesh, MeshBuilder, Rect
 use ggez::{Context, ContextBuilder, GameResult};
 use itertools::Itertools;
 use rand::Rng;
-use utils::ones;
 
 mod utils;
 
@@ -36,8 +35,21 @@ impl MainState {
         let shape = Shape::from((config.grid_width, config.grid_height));
         let conv_shape = Shape::from((1, 1, config.grid_width, config.grid_height));
 
-        let mut filter = ones(config.r * 2 + 1, config.r * 2 + 1);
-        filter[config.r][config.r] = 0.;
+        let filter = [
+            [0., 0., 0., 0., 1., 1., 1., 0., 0., 0., 0.],
+            [0., 0., 1., 1., 1., 1., 1., 1., 1., 0., 0.],
+            [0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0.],
+            [0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0.],
+            [1., 1., 1., 1., 0., 0., 0., 1., 1., 1., 1.],
+            [1., 1., 1., 1., 0., 0., 0., 1., 1., 1., 1.],
+            [1., 1., 1., 1., 0., 0., 0., 1., 1., 1., 1.],
+            [0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0.],
+            [0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0.],
+            [0., 0., 1., 1., 1., 1., 1., 1., 1., 0., 0.],
+            [0., 0., 0., 0., 1., 1., 1., 0., 0., 0., 0.],
+        ]
+        .map(|x| x.to_vec())
+        .to_vec();
         let filter = filter.into_iter().flatten().collect_vec();
         let sum = filter.iter().sum::<f32>();
         let filter_norm = filter.iter().map(|x| x / sum).collect();
@@ -122,7 +134,7 @@ fn main() -> GameResult {
     let grid_size = (100, 100);
     let cell_size = 10.;
     let t = 10.;
-    let r = 10;
+    let r = 5;
     let fps = 20;
 
     let mut rng = rand::thread_rng();
