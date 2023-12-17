@@ -6,6 +6,7 @@ use ggez::graphics::{Canvas, Color, DrawMode, DrawParam, Mesh, MeshBuilder, Rect
 use ggez::{Context, ContextBuilder, GameResult};
 use itertools::Itertools;
 use rand::Rng;
+use utils::{norm, range};
 
 mod utils;
 
@@ -31,26 +32,24 @@ struct MainState {
 }
 
 impl MainState {
-    pub fn new(config: Config, initial_state: Vec<f32>) -> Self {
+    pub fn new(config: Config) -> Self {
+        let mut rng = rand::thread_rng();
+        let initial_state = (0..config.grid_width * config.grid_height)
+            .into_iter()
+            .map(|_| rng.gen())
+            .collect::<Vec<f32>>();
+
         let shape = Shape::from((config.grid_width, config.grid_height));
         let conv_shape = Shape::from((1, 1, config.grid_width, config.grid_height));
 
-        let filter = [
-            [0., 0., 0., 0., 1., 1., 1., 0., 0., 0., 0.],
-            [0., 0., 1., 1., 1., 1., 1., 1., 1., 0., 0.],
-            [0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0.],
-            [0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0.],
-            [1., 1., 1., 1., 0., 0., 0., 1., 1., 1., 1.],
-            [1., 1., 1., 1., 0., 0., 0., 1., 1., 1., 1.],
-            [1., 1., 1., 1., 0., 0., 0., 1., 1., 1., 1.],
-            [0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0.],
-            [0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0.],
-            [0., 0., 1., 1., 1., 1., 1., 1., 1., 0., 0.],
-            [0., 0., 0., 0., 1., 1., 1., 0., 0., 0., 0.],
-        ]
-        .map(|x| x.to_vec())
-        .to_vec();
-        let filter = filter.into_iter().flatten().collect_vec();
+        let filter = range(-9., 1., 20).iter().map(|x| vec![*x]).collect_vec();
+        let norm = norm(filter);
+        let filter = norm
+            .into_iter()
+            .flatten()
+            .map(|x| x / config.r as f32)
+            .collect_vec();
+        let filter = Self::k(filter);
         let sum = filter.iter().sum::<f32>();
         let filter_norm = filter.iter().map(|x| x / sum).collect();
         let filter_shape = Shape::from((1, 1, config.r * 2 + 1, config.r * 2 + 1));
@@ -70,8 +69,24 @@ impl MainState {
         }
     }
 
-    fn growth((x, y): (&f32, f32), t: f32) -> f32 {
-        x + t * (f32::from((y >= 0.12) & (y <= 0.15)) - f32::from((y <= 0.12) | (y > 0.15)))
+    // fn growth(y: f32) -> f32 {
+    //     f32::from((y >= 0.12) & (y <= 0.15)) - f32::from((y <= 0.12) | (y > 0.15))
+    // }
+
+    fn growth(y: f32) -> f32 {
+        let m = 0.135;
+        let s = 0.015;
+        Self::bell(y, m, s) * 2. - 1.
+    }
+
+    fn bell(x: f32, m: f32, s: f32) -> f32 {
+        f32::exp(-((x - m) / s).powf(2.) / 2.)
+    }
+
+    fn k(d: Vec<f32>) -> Vec<f32> {
+        d.iter()
+            .map(|x| f32::from(*x < 1.) * Self::bell(*x, 0.5, 0.15))
+            .collect_vec()
     }
 }
 
@@ -87,7 +102,7 @@ impl EventHandler for MainState {
                 .cells
                 .iter()
                 .zip(res_flatten)
-                .map(|(x, y)| Self::growth((x, y), 1. / self.config.t))
+                .map(|(x, y)| x + 1. / self.config.t * Self::growth(y))
                 .collect();
 
             let grown_tensor =
@@ -134,14 +149,8 @@ fn main() -> GameResult {
     let grid_size = (100, 100);
     let cell_size = 10.;
     let t = 10.;
-    let r = 5;
+    let r = 10;
     let fps = 20;
-
-    let mut rng = rand::thread_rng();
-    let initial_state = (0..grid_size.0 * grid_size.1)
-        .into_iter()
-        .map(|_| rng.gen())
-        .collect::<Vec<f32>>();
 
     // Set configuration
     let config: Config = Config {
@@ -152,7 +161,7 @@ fn main() -> GameResult {
         r,
         fps,
     };
-    let state = MainState::new(config, initial_state);
+    let state = MainState::new(config);
 
     // Setup ggez stuff
     let cb = ContextBuilder::new("game_of_life", "Zoran")
