@@ -1,41 +1,36 @@
 #![feature(slice_flatten)]
 
-use games::lenia::Lenia;
-use games::Game;
 use ggez::event;
 use ggez::event::EventHandler;
 use ggez::graphics::{Canvas, Color, DrawMode, DrawParam, Mesh, MeshBuilder, Rect};
 use ggez::{Context, ContextBuilder, GameResult};
-use nalgebra::{Complex, DMatrix};
+use road_to_lenia::lenias::StandardLenia;
+use road_to_lenia::{self, Lenia, Simulator};
 
-mod creatures;
-mod games;
-mod kernels;
-
-struct MainState {
+struct MainState<L: Lenia> {
     fps: u32,
     screen_size: f32,
-    game: Lenia,
-    cells: DMatrix<Complex<f64>>,
+    shape: (usize, usize),
+    game: Simulator<L>,
 }
 
-impl MainState {
-    pub fn new(screen_size: f32, fps: u32) -> Self {
-        let game = Lenia::new();
-        let initial_state = Lenia::initial_state();
+impl<L: Lenia> MainState<L> {
+    pub fn new(screen_size: f32, fps: u32, shape: (usize, usize)) -> Self {
+        let (w, h) = shape;
+        let game = Simulator::<L>::new(&[w, h]);
         MainState {
             game,
-            cells: initial_state,
+            shape,
             screen_size,
             fps,
         }
     }
 }
 
-impl EventHandler for MainState {
+impl<L: Lenia> EventHandler for MainState<L> {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         while ctx.time.check_update_time(self.fps) {
-            self.cells = self.game.update(self.cells.clone());
+            self.game.iterate();
         }
         Ok(())
     }
@@ -44,16 +39,19 @@ impl EventHandler for MainState {
         let mut canvas = Canvas::from_frame(ctx, Color::BLACK);
         let mut builder = MeshBuilder::new();
 
+        let cells = self.game.get_channel_as_ref(0);
+        let (w, h) = self.shape;
+
         // Draw cells
-        self.cells
+        cells
             .iter()
             .enumerate()
-            .filter(|(_, x)| x.re > 0.)
-            .for_each(|(i, x)| {
-                let pos_x = i % Lenia::SIZE;
-                let pos_y = i / Lenia::SIZE;
-                let cell_size = self.screen_size / Lenia::SIZE as f32;
-                let color = Color::new(0., 1., 0., x.re as f32); // Green
+            .filter(|(_, &x)| x > 0.)
+            .for_each(|(i, &x)| {
+                let pos_x = i % w;
+                let pos_y = i / h;
+                let cell_size = self.screen_size / w as f32;
+                let color = Color::new(0., 1., 0., x as f32); // Green
                 let draw_mode = DrawMode::fill();
                 let rect = Rect::new(
                     pos_x as f32 * cell_size,
@@ -74,9 +72,10 @@ impl EventHandler for MainState {
 fn main() -> GameResult {
     let screen_size = 1000.;
     let fps = 20;
+    let shape = (64, 64);
 
     // Set configuration
-    let state = MainState::new(screen_size, fps);
+    let state = MainState::<StandardLenia>::new(screen_size, fps, shape);
 
     // Setup ggez stuff
     let cb = ContextBuilder::new("game_of_life", "Zoran")

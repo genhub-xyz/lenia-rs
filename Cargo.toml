@@ -8,9 +8,8 @@ edition = "2018"
 
 [dependencies]
 ggez = "0.9.3"
-rayon = "1.8.0"
-rand = "0.8.5"
-itertools = "0.12.0"
+ndarray = { version = "0.15.6", features = ["rayon"] }
 rustfft = "6.1.0"
-fft2d = { version = "0.1.1", features = ["nalgebra"] }
-nalgebra = { version = "0.29.0", default-features = false, features = ["std"] }
+num-complex = "0.4.2"
+png = "0.17.7"
+rayon = "1.7.0"
