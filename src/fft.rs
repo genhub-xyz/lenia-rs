@@ -43,14 +43,10 @@ impl PlannedFFT {
         }
         let mut planner = FftPlanner::new();
         let direction: FftDirection;
-        match inverse {
-            true => {
-                direction = FftDirection::Inverse;
-            }
-            false => {
-                direction = FftDirection::Forward;
-            }
-        }
+        let direction = match inverse {
+            true => FftDirection::Inverse,
+            false => FftDirection::Forward,
+        };
         let fft = planner.plan_fft(length, direction);
         let scratch_space: Vec<Complex<f64>> = Vec::from_iter(
             std::iter::repeat(Complex::new(0.0, 0.0)).take(fft.get_inplace_scratch_len()),
@@ -60,14 +56,7 @@ impl PlannedFFT {
     }
 
     pub fn inverse(&self) -> bool {
-        match self.fft.fft_direction() {
-            FftDirection::Forward => {
-                return false;
-            }
-            FftDirection::Inverse => {
-                return true;
-            }
-        }
+        self.fft.fft_direction() == FftDirection::Inverse
     }
 
     pub fn length(&self) -> usize {
